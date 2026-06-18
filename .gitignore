@@ -1,0 +1,13 @@
+# Secrets — never commit your real key
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Saved output
+output/
+*.md.bak
