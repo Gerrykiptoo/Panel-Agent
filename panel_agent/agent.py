@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import time
 
 from google import genai
 from google.genai import types
+from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 
 from .prompts import (
@@ -76,6 +78,26 @@ class PanelAgent:
         self.client = genai.Client(api_key=key)
         self.model = model or os.getenv("GEMINI_MODEL") or DEFAULT_MODEL
 
+    def _generate_content(self, *, contents: str, config, attempts: int = 4):
+        """Call Gemini, retrying transient overload errors (503/429) with backoff."""
+        delay = 2.0
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return self.client.models.generate_content(
+                    model=self.model, contents=contents, config=config
+                )
+            except genai_errors.APIError as exc:
+                # Retry only on transient errors; re-raise real problems immediately.
+                if getattr(exc, "code", None) in (429, 500, 503) and attempt < attempts - 1:
+                    last_exc = exc
+                    time.sleep(delay)
+                    delay *= 2  # exponential backoff
+                    continue
+                raise
+        if last_exc:  # pragma: no cover - safety net
+            raise last_exc
+
     def generate(
         self,
         topic: str,
@@ -100,8 +122,7 @@ class PanelAgent:
             per_theme=per_theme,
         )
 
-        response = self.client.models.generate_content(
-            model=self.model,
+        response = self._generate_content(
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
@@ -153,8 +174,7 @@ class PanelAgent:
             examples_block=examples_block,
         )
 
-        response = self.client.models.generate_content(
-            model=self.model,
+        response = self._generate_content(
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
@@ -187,8 +207,7 @@ class PanelAgent:
         numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, start=1))
         prompt = REFINE_PROMPT.format(instructions=instructions, questions=numbered)
 
-        response = self.client.models.generate_content(
-            model=self.model,
+        response = self._generate_content(
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,

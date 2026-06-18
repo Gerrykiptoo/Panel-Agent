@@ -7,6 +7,8 @@ Run it once, then use everything in your browser:
 
 from __future__ import annotations
 
+import os
+
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -20,31 +22,34 @@ st.title("🎙 Panel Question Agent")
 st.caption("Professional, unique, human-centered questions for any panel — powered by Gemini.")
 
 
-@st.cache_resource(show_spinner=False)
-def get_agent() -> PanelAgent | None:
-    """Create the agent once and reuse it. Returns None if no API key.
-
-    Looks for the key in Streamlit secrets first (used when deployed),
-    then falls back to the local environment / .env file.
-    """
-    api_key = None
+def resolve_api_key() -> str | None:
+    """Find the Gemini key from Streamlit secrets (when deployed) or env/.env."""
     try:
-        api_key = st.secrets.get("GEMINI_API_KEY")
+        key = st.secrets.get("GEMINI_API_KEY")
+        if key:
+            return key
     except Exception:  # noqa: BLE001 - no secrets file locally is fine
-        api_key = None
-    try:
-        return PanelAgent(api_key=api_key) if api_key else PanelAgent()
-    except ValueError:
-        return None
+        pass
+    return os.getenv("GEMINI_API_KEY")
 
 
-agent = get_agent()
-if agent is None:
+@st.cache_resource(show_spinner=False)
+def get_agent(api_key: str) -> PanelAgent:
+    """Create the agent once per key. Cached only on success."""
+    return PanelAgent(api_key=api_key)
+
+
+api_key = resolve_api_key()
+if not api_key:
     st.error(
-        "No Gemini API key found. Add `GEMINI_API_KEY=...` to your `.env` file, "
-        "then refresh this page."
+        "No Gemini API key found. On Streamlit Cloud, add it under "
+        "**Manage app → Settings → Secrets** as:\n\n"
+        "```toml\nGEMINI_API_KEY = \"your-key\"\n```\n"
+        "Locally, put it in a `.env` file. Then reboot/refresh."
     )
     st.stop()
+
+agent = get_agent(api_key)
 
 # --- Inputs -------------------------------------------------------------------
 
