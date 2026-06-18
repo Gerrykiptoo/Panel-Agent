@@ -22,9 +22,18 @@ st.caption("Professional, unique, human-centered questions for any panel — pow
 
 @st.cache_resource(show_spinner=False)
 def get_agent() -> PanelAgent | None:
-    """Create the agent once and reuse it. Returns None if no API key."""
+    """Create the agent once and reuse it. Returns None if no API key.
+
+    Looks for the key in Streamlit secrets first (used when deployed),
+    then falls back to the local environment / .env file.
+    """
+    api_key = None
     try:
-        return PanelAgent()
+        api_key = st.secrets.get("GEMINI_API_KEY")
+    except Exception:  # noqa: BLE001 - no secrets file locally is fine
+        api_key = None
+    try:
+        return PanelAgent(api_key=api_key) if api_key else PanelAgent()
     except ValueError:
         return None
 
